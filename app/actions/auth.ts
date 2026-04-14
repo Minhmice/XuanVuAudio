@@ -1,8 +1,15 @@
 "use server";
 
+import { z } from "zod";
 import { redirect } from "next/navigation";
 
 import { getSessionMaxAgeSeconds } from "@/app/lib/auth/session-duration";
+import {
+  mapAuthFailureToUi,
+  normalizeIdentifier,
+  resolveIdentifierToEmail,
+} from "@/app/lib/auth/identifier";
+import { createSupabaseAdminClient } from "@/app/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/app/lib/supabase/server";
 
 export type SignInErrorCode =
@@ -35,6 +42,17 @@ export type SignInPayload = {
   password?: string;
   rememberMe?: boolean;
 };
+
+type InternalUserProfile = {
+  is_locked: boolean;
+  is_deactivated: boolean;
+};
+
+const signInSchema = z.object({
+  identifier: z.string().trim().min(1),
+  password: z.string().min(1),
+  rememberMe: z.boolean(),
+});
 
 function toBoolean(value: FormDataEntryValue | boolean | undefined): boolean {
   if (typeof value === "boolean") {
@@ -72,11 +90,17 @@ function buildValidationError(identifier: string, password: string): SignInResul
   const fieldErrors: SignInError["fieldErrors"] = {};
 
   if (!identifier) {
-    fieldErrors.identifier = "Vui lòng nhập email hoặc tên đăng nhập.";
+    fieldErrors.identifier = mapAuthFailureToUi({
+      kind: "validation",
+      field: "identifier",
+    }).message;
   }
 
   if (!password) {
-    fieldErrors.password = "Vui lòng nhập mật khẩu.";
+    fieldErrors.password = mapAuthFailureToUi({
+      kind: "validation",
+      field: "password",
+    }).message;
   }
 
   return {
@@ -89,66 +113,106 @@ function buildValidationError(identifier: string, password: string): SignInResul
   };
 }
 
-function mapSupabaseErrorToSignInResult(errorMessage: string): SignInResult {
-  const normalized = errorMessage.toLowerCase();
-
-  if (normalized.includes("locked")) {
-    return {
-      ok: false,
-      error: {
-        code: "LOCKED_ACCOUNT",
-        message: "Tài khoản của bạn đang bị khóa. Vui lòng liên hệ quản trị viên.",
-      },
-    };
-  }
-
-  if (normalized.includes("deactivated") || normalized.includes("disabled")) {
-    return {
-      ok: false,
-      error: {
-        code: "DEACTIVATED_ACCOUNT",
-        message: "Tài khoản của bạn đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.",
-      },
-    };
-  }
-
-  if (normalized.includes("invalid") || normalized.includes("credentials")) {
-    return {
-      ok: false,
-      error: {
-        code: "INVALID_CREDENTIALS",
-        message: "Thông tin đăng nhập không đúng. Vui lòng thử lại.",
-      },
-    };
-  }
-
+function buildAuthFailure(code: SignInErrorCode, message: string): SignInResult {
   return {
     ok: false,
     error: {
-      code: "SYSTEM_ERROR",
-      message:
-        "Không thể đăng nhập lúc này. Vui lòng thử lại sau hoặc liên hệ quản trị viên.",
+      code,
+      message,
     },
   };
 }
 
-export async function signIn(formDataOrPayload: FormData | SignInPayload): Promise<SignInResult> {
-  const { identifier, password, rememberMe } = getSignInPayload(formDataOrPayload);
+function mapSupabaseErrorToSignInResult(): SignInResult {
+  return buildAuthFailure(
+    "INVALID_CREDENTIALS",
+    mapAuthFailureToUi({ kind: "invalid_credentials" }).message,
+  );
+}
 
-  if (!identifier || !password) {
-    return buildValidationError(identifier, password);
+async function getAccountStateByEmail(email: string): Promise<
+  | { profile: InternalUserProfile }
+  | { errorCode: "invalid_credentials" | "system" }
+> {
+  const adminClient = createSupabaseAdminClient();
+
+  const { data, error } = await adminClient
+    .from("internal_user_profiles")
+    .select("is_locked, is_deactivated")
+    .eq("email", email)
+    .maybeSingle<InternalUserProfile>();
+
+  if (error) {
+    return { errorCode: "system" };
   }
 
-  const sessionMaxAgeSeconds = getSessionMaxAgeSeconds({ rememberMe });
+  if (!data) {
+    return { errorCode: "invalid_credentials" };
+  }
+
+  return { profile: data };
+}
+
+export async function signIn(formDataOrPayload: FormData | SignInPayload): Promise<SignInResult> {
+  const payload = getSignInPayload(formDataOrPayload);
+  const parsed = signInSchema.safeParse(payload);
+
+  if (!parsed.success) {
+    return buildValidationError(payload.identifier, payload.password);
+  }
+
+  const normalizedIdentifier = normalizeIdentifier(parsed.data.identifier);
+  const resolvedIdentifier = await resolveIdentifierToEmail({ identifier: normalizedIdentifier });
+
+  if ("errorCode" in resolvedIdentifier) {
+    if (resolvedIdentifier.errorCode === "invalid_credentials") {
+      return buildAuthFailure(
+        "INVALID_CREDENTIALS",
+        mapAuthFailureToUi({ kind: "invalid_credentials" }).message,
+      );
+    }
+
+    return buildAuthFailure("SYSTEM_ERROR", mapAuthFailureToUi({ kind: "system" }).message);
+  }
+
+  const sessionMaxAgeSeconds = getSessionMaxAgeSeconds({ rememberMe: parsed.data.rememberMe });
   const supabase = await createSupabaseServerClient({ sessionMaxAgeSeconds });
 
   const { error } = await supabase.auth.signInWithPassword({
-    email: identifier,
-    password,
+    email: resolvedIdentifier.email,
+    password: parsed.data.password,
   });
 
   if (error) {
-    return mapSupabaseErrorToSignInResult(error.message);
+    return mapSupabaseErrorToSignInResult();
+  }
+
+  const accountState = await getAccountStateByEmail(resolvedIdentifier.email);
+
+  if ("errorCode" in accountState) {
+    await supabase.auth.signOut();
+
+    if (accountState.errorCode === "invalid_credentials") {
+      return buildAuthFailure(
+        "INVALID_CREDENTIALS",
+        mapAuthFailureToUi({ kind: "invalid_credentials" }).message,
+      );
+    }
+
+    return buildAuthFailure("SYSTEM_ERROR", mapAuthFailureToUi({ kind: "system" }).message);
+  }
+
+  if (accountState.profile.is_locked) {
+    await supabase.auth.signOut();
+    return buildAuthFailure("LOCKED_ACCOUNT", mapAuthFailureToUi({ kind: "locked" }).message);
+  }
+
+  if (accountState.profile.is_deactivated) {
+    await supabase.auth.signOut();
+    return buildAuthFailure(
+      "DEACTIVATED_ACCOUNT",
+      mapAuthFailureToUi({ kind: "deactivated" }).message,
+    );
   }
 
   redirect("/dashboard");
