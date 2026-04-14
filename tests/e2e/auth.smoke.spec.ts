@@ -1,27 +1,34 @@
-import { test, expect } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
-const REQUIRED_ENV_VARS = [
-  "NEXT_PUBLIC_SUPABASE_URL",
-  "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-  "SUPABASE_SERVICE_ROLE_KEY",
-  "E2E_INTERNAL_EMAIL",
-  "E2E_INTERNAL_PASSWORD",
-] as const;
+const skipReason = process.env.E2E_AUTH_SMOKE_SKIP_REASON;
+const email = process.env.E2E_INTERNAL_EMAIL;
+const password = process.env.E2E_INTERNAL_PASSWORD;
 
-const missingVars = REQUIRED_ENV_VARS.filter((name) => !process.env[name]);
-const shouldSkip = missingVars.length > 0;
+test.describe("auth smoke", () => {
+  test.beforeEach(() => {
+    test.skip(Boolean(skipReason), skipReason ?? "");
+  });
 
-test.describe("auth smoke placeholder", () => {
-  test("launches and reaches local root when env is configured", async ({ page }) => {
-    test.skip(
-      shouldSkip,
-      `Skipping smoke placeholder. Missing required env vars: ${missingVars.join(", ")}`,
-    );
+  test("redirects unauthenticated user from /dashboard to /login", async ({ page }) => {
+    await page.context().clearCookies();
 
-    const response = await page.goto("http://localhost:3000/", {
-      waitUntil: "domcontentloaded",
-    });
+    await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
 
-    expect(response).not.toBeNull();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("heading", { name: "Đăng nhập nội bộ" })).toBeVisible();
+  });
+
+  test("logs in with provisioned credentials and lands on /dashboard", async ({ page }) => {
+    test.skip(!email || !password, "E2E credentials are unavailable");
+
+    await page.goto("/login", { waitUntil: "domcontentloaded" });
+
+    await page.getByLabel("Email hoặc tên đăng nhập").fill(email!);
+    await page.getByLabel("Mật khẩu").fill(password!);
+    await page.getByLabel("Ghi nhớ đăng nhập").check();
+    await page.getByRole("button", { name: "Đăng nhập" }).click();
+
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole("heading", { name: "Bảng điều khiển nội bộ" })).toBeVisible();
   });
 });

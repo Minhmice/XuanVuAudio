@@ -5,9 +5,17 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   reporter: "list",
+  globalSetup: "./tests/e2e/global-setup.ts",
   use: {
+    baseURL: "http://127.0.0.1:3000",
     browserName: "chromium",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+  },
+  webServer: {
+    command: "npm run dev",
+    url: "http://127.0.0.1:3000",
+    reuseExistingServer: true,
+    timeout: 120_000,
   },
 });
