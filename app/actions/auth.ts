@@ -218,6 +218,13 @@ export async function signIn(formDataOrPayload: FormData | SignInPayload): Promi
   redirect("/dashboard");
 }
 
+export async function signInWithState(
+  _previousState: SignInResult | null,
+  formData: FormData,
+): Promise<SignInResult> {
+  return signIn(formData);
+}
+
 export async function signOut() {
   const supabase = await createSupabaseServerClient();
   await supabase.auth.signOut();
