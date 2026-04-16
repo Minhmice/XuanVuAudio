@@ -16,6 +16,17 @@ alter table public.internal_user_profiles enable row level security;
 
 revoke all on table public.internal_user_profiles from anon, authenticated;
 
+-- Allow authenticated users to read ONLY their own profile row.
+-- This supports non-privileged runtime checks (e.g., role-gated routing) without exposing other users.
+grant select on table public.internal_user_profiles to authenticated;
+
+drop policy if exists internal_user_profiles_read_own on public.internal_user_profiles;
+create policy internal_user_profiles_read_own
+  on public.internal_user_profiles
+  for select
+  to authenticated
+  using (user_id = auth.uid());
+
 create index if not exists internal_user_profiles_email_idx
   on public.internal_user_profiles (email);
 

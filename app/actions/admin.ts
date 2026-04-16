@@ -140,6 +140,48 @@ export async function listInternalUsers(): Promise<
 }
 
 /**
+ * Admin-only action: fetch a single internal user by id.
+ */
+export async function getInternalUserById(
+  userId: string,
+): Promise<AdminActionResult<InternalUserSummary>> {
+  const guard = await requireAdminRole();
+  const guardError = mapGuardError(guard);
+  if (guardError) return guardError;
+
+  if (!userId) return notFoundError();
+
+  try {
+    const adminClient = createSupabaseAdminClient();
+    const { data, error } = await adminClient
+      .from("internal_user_profiles")
+      .select(
+        "user_id, email, username, role, is_locked, is_deactivated, created_at",
+      )
+      .eq("user_id", userId)
+      .maybeSingle<ProfileRow>();
+
+    if (error) return systemError();
+    if (!data) return notFoundError();
+
+    return {
+      ok: true,
+      data: {
+        userId: data.user_id,
+        email: data.email,
+        username: data.username,
+        role: data.role as InternalUserRole,
+        isLocked: data.is_locked,
+        isDeactivated: data.is_deactivated,
+        createdAt: data.created_at,
+      },
+    };
+  } catch {
+    return systemError();
+  }
+}
+
+/**
  * Admin-only action: create a new internal user.
  *
  * Creates the auth.users record via Supabase admin API, then upserts the profile row.

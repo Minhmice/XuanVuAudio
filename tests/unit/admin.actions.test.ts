@@ -4,6 +4,7 @@ import { requireAdminRole } from "@/app/lib/auth/role";
 import {
   createInternalUser,
   deactivateUser,
+  getInternalUserById,
   listInternalUsers,
   reactivateUser,
   updateUserRole,
@@ -65,7 +66,14 @@ beforeEach(() => {
   // Default chain setup: from().select().order() returns data
   mockOrder.mockResolvedValue({ data: [ADMIN_USER_ROW, STAFF_USER_ROW], error: null });
   mockMaybeSingle.mockResolvedValue({ data: ADMIN_USER_ROW, error: null });
-  mockEq.mockReturnValue({ select: vi.fn(() => ({ maybeSingle: mockMaybeSingle })), order: mockOrder });
+  mockEq.mockReturnValue({
+    // Used by getInternalUserById(): select(...).eq(...).maybeSingle(...)
+    maybeSingle: mockMaybeSingle,
+    // Used by updateUserRole(): update(...).eq(...).select(...).maybeSingle(...)
+    select: vi.fn(() => ({ maybeSingle: mockMaybeSingle })),
+    // Used by listInternalUsers(): select(...).order(...)
+    order: mockOrder,
+  });
   mockUpdate.mockReturnValue({ eq: mockEq });
   mockUpsert.mockResolvedValue({ data: null, error: null });
   mockSelect.mockReturnValue({ order: mockOrder, maybeSingle: mockMaybeSingle, eq: mockEq });
@@ -225,6 +233,46 @@ describe("createInternalUser", () => {
     const result = await createInternalUser("a@b.com", "user", "pass", "staff");
 
     expect(result).toMatchObject({ ok: false, error: { code: "SYSTEM_ERROR" } });
+  });
+});
+
+// -------------------------------------------------------
+// getInternalUserById
+// -------------------------------------------------------
+describe("getInternalUserById", () => {
+  it("returns FORBIDDEN when staff caller invokes the action", async () => {
+    vi.mocked(requireAdminRole).mockResolvedValue({ ok: false, reason: "forbidden" });
+
+    const result = await getInternalUserById("uuid-1");
+
+    expect(result).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+  });
+
+  it("returns NOT_FOUND when profile row does not exist", async () => {
+    vi.mocked(requireAdminRole).mockResolvedValue({ ok: true });
+    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+
+    const result = await getInternalUserById("missing");
+
+    expect(result).toMatchObject({ ok: false, error: { code: "NOT_FOUND" } });
+  });
+
+  it("returns a typed user summary for authorized admin", async () => {
+    vi.mocked(requireAdminRole).mockResolvedValue({ ok: true });
+
+    const result = await getInternalUserById("uuid-1");
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data).toMatchObject({
+        userId: "uuid-1",
+        email: "admin@tainghe.local",
+        username: "admin",
+        role: "admin",
+        isLocked: false,
+        isDeactivated: false,
+      });
+    }
   });
 });
 
