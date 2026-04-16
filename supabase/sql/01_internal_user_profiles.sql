@@ -12,6 +12,10 @@ create table if not exists public.internal_user_profiles (
   updated_at timestamptz not null default timezone('utc', now())
 );
 
+alter table public.internal_user_profiles enable row level security;
+
+revoke all on table public.internal_user_profiles from anon, authenticated;
+
 create index if not exists internal_user_profiles_email_idx
   on public.internal_user_profiles (email);
 
