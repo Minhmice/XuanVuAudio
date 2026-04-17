@@ -48,5 +48,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: INTERNAL_ROUTE_PREFIXES.map((prefix) => `${prefix}/:path*`),
+  // Next.js requires `config.matcher` to be statically analyzable.
+  matcher: ["/dashboard/:path*", "/admin/:path*"],
 };

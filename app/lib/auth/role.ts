@@ -11,6 +11,10 @@ export type RequireAdminRoleResult =
   | { ok: true }
   | { ok: false; reason: "unauthenticated" | "forbidden" | "system" };
 
+export type RequireStaffRoleResult =
+  | { ok: true }
+  | { ok: false; reason: "unauthenticated" | "forbidden" | "system" };
+
 type RoleProfileRow = {
   role: string;
 };
@@ -88,6 +92,29 @@ export async function requireAdminRole(): Promise<RequireAdminRoleResult> {
   }
 
   if (result.role !== "admin") {
+    return { ok: false, reason: "forbidden" };
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Guards staff-accessible internal server actions and pages.
+ *
+ * Returns `{ ok: true }` for authenticated internal users with either `staff` or `admin` role.
+ */
+export async function requireStaffRole(): Promise<RequireStaffRoleResult> {
+  const result = await getCurrentUserRole();
+
+  if ("error" in result) {
+    if (result.error === "unauthenticated") {
+      return { ok: false, reason: "unauthenticated" };
+    }
+    // not_found or system
+    return { ok: false, reason: "system" };
+  }
+
+  if (result.role !== "admin" && result.role !== "staff") {
     return { ok: false, reason: "forbidden" };
   }
 

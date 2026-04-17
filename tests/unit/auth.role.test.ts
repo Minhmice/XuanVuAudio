@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createSupabaseAdminClient } from "@/app/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/app/lib/supabase/server";
-import { getCurrentUserRole, requireAdminRole } from "@/app/lib/auth/role";
+import { getCurrentUserRole, requireAdminRole, requireStaffRole } from "@/app/lib/auth/role";
 
 vi.mock("@/app/lib/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(),
@@ -225,5 +225,76 @@ describe("requireAdminRole", () => {
 
     // not_found maps to system in requireAdminRole
     expect(result).toEqual({ ok: false, reason: "system" });
+  });
+});
+
+describe("requireStaffRole", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns unauthenticated reason when not authenticated", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      makeServerClient({ user: null }) as unknown as ReturnType<typeof createSupabaseServerClient>,
+    );
+
+    const result = await requireStaffRole();
+
+    expect(result).toEqual({ ok: false, reason: "unauthenticated" });
+  });
+
+  it("returns system reason when DB error occurs", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      makeServerClient({ user: { id: "user-123" } }) as unknown as ReturnType<
+        typeof createSupabaseServerClient
+      >,
+    );
+
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      makeAdminClient({
+        data: null,
+        error: { message: "DB connection refused" },
+      }) as unknown as ReturnType<typeof createSupabaseAdminClient>,
+    );
+
+    const result = await requireStaffRole();
+
+    expect(result).toEqual({ ok: false, reason: "system" });
+  });
+
+  it("returns ok: true for staff users", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      makeServerClient({ user: { id: "user-staff" } }) as unknown as ReturnType<
+        typeof createSupabaseServerClient
+      >,
+    );
+
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      makeAdminClient({ data: { role: "staff" }, error: null }) as unknown as ReturnType<
+        typeof createSupabaseAdminClient
+      >,
+    );
+
+    const result = await requireStaffRole();
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("returns ok: true for admin users", async () => {
+    vi.mocked(createSupabaseServerClient).mockResolvedValue(
+      makeServerClient({ user: { id: "user-admin" } }) as unknown as ReturnType<
+        typeof createSupabaseServerClient
+      >,
+    );
+
+    vi.mocked(createSupabaseAdminClient).mockReturnValue(
+      makeAdminClient({ data: { role: "admin" }, error: null }) as unknown as ReturnType<
+        typeof createSupabaseAdminClient
+      >,
+    );
+
+    const result = await requireStaffRole();
+
+    expect(result).toEqual({ ok: true });
   });
 });
