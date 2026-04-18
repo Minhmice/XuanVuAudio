@@ -22,6 +22,21 @@ as $$
   );
 $$;
 
+-- Staff + admin (matches articles helper; idempotent if 05_articles.sql ran first).
+create or replace function public.is_internal_staff()
+returns boolean
+language sql
+stable
+as $$
+  select exists (
+    select 1
+    from public.internal_user_profiles p
+    where p.user_id = auth.uid()
+      and p.role in ('admin', 'staff')
+      and p.is_deactivated = false
+  );
+$$;
+
 -- ------------------------------------------------------------
 -- Products (core record)
 -- ------------------------------------------------------------
@@ -108,9 +123,9 @@ create policy catalog_products_authenticated_read
   on public.catalog_products
   for select
   to authenticated
-  using (is_published = true or public.is_internal_admin());
+  using (is_published = true or public.is_internal_staff());
 
--- Writes are restricted to internal admins.
+-- Writes: internal staff + admin (CAT-04).
 grant insert, update, delete on table public.catalog_products to authenticated;
 
 drop policy if exists catalog_products_admin_insert on public.catalog_products;
@@ -118,20 +133,20 @@ create policy catalog_products_admin_insert
   on public.catalog_products
   for insert
   to authenticated
-  with check (public.is_internal_admin());
+  with check (public.is_internal_staff());
 
 drop policy if exists catalog_products_admin_update on public.catalog_products;
 create policy catalog_products_admin_update
   on public.catalog_products
   for update
   to authenticated
-  using (public.is_internal_admin())
-  with check (public.is_internal_admin());
+  using (public.is_internal_staff())
+  with check (public.is_internal_staff());
 
 drop policy if exists catalog_products_admin_delete on public.catalog_products;
 create policy catalog_products_admin_delete
   on public.catalog_products
   for delete
   to authenticated
-  using (public.is_internal_admin());
+  using (public.is_internal_staff());
 

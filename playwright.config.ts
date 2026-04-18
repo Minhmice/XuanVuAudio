@@ -7,14 +7,14 @@ export default defineConfig({
   reporter: "list",
   globalSetup: "./tests/e2e/global-setup.ts",
   use: {
-    baseURL: "http://127.0.0.1:3000",
+    baseURL: "http://127.0.0.1:3001",
     browserName: "chromium",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
   },
   webServer: {
-    command: "npm run dev",
-    url: "http://127.0.0.1:3000",
+    command: "npm run dev:admin",
+    url: "http://127.0.0.1:3001",
     reuseExistingServer: true,
     timeout: 120_000,
   },

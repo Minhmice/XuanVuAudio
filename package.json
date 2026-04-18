@@ -1,36 +1,31 @@
 {
-  "name": "xuan-vu-audio",
-  "version": "0.1.0",
+  "name": "xuanvuaudio",
   "private": true,
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "next lint",
+    "dev": "concurrently -n web,admin -c blue,magenta \"npm run dev -w @xuanvu/web\" \"npm run dev -w @xuanvu/admin\"",
+    "dev:web": "npm run dev -w @xuanvu/web",
+    "dev:admin": "npm run dev -w @xuanvu/admin",
+    "build": "npm run build -w @xuanvu/web && npm run build -w @xuanvu/admin",
+    "build:web": "npm run build -w @xuanvu/web",
+    "build:admin": "npm run build -w @xuanvu/admin",
+    "lint": "tsc --noEmit -p apps/web/tsconfig.json && tsc --noEmit -p apps/admin/tsconfig.json",
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:full": "npm run test && npm run test:e2e"
-  },
-  "dependencies": {
-    "@supabase/ssr": "^0.10.2",
-    "@supabase/supabase-js": "^2.103.0",
-    "next": "16.2.3",
-    "react": "19.2.5",
-    "react-dom": "19.2.5",
-    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@playwright/test": "1.59.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
-    "@types/node": "24.8.1",
-    "@types/react": "19.2.2",
-    "@types/react-dom": "19.2.2",
-    "autoprefixer": "10.4.21",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "concurrently": "^9.2.1",
+    "dotenv": "^17.4.2",
     "jsdom": "^29.0.2",
-    "postcss": "8.5.6",
-    "tailwindcss": "3.4.18",
-    "typescript": "5.9.3",
-    "vitest": "4.1.4"
+    "postcss": "^8.5.10",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.4"
   }
 }

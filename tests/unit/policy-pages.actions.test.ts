@@ -5,10 +5,10 @@ import {
   createPolicyPage,
   deletePolicyPage,
   getPolicyPageById,
-  getPublishedPolicyPageBySlug,
   listPolicyPages,
   updatePolicyPage,
 } from "@/app/actions/policy-pages";
+import { getPublishedPolicyPageBySlug } from "@xuanvu/shared/storefront/policy-page-public";
 
 vi.mock("@/app/lib/auth/role", () => ({
   requireAdminRole: vi.fn(),
@@ -34,7 +34,7 @@ const mockServerSelect = vi.fn();
 const mockServerEq = vi.fn();
 const mockServerMaybeSingle = vi.fn();
 
-vi.mock("@/app/lib/supabase/server", () => ({
+vi.mock("../../packages/shared/src/supabase/server", () => ({
   createSupabaseServerClient: vi.fn(async () => ({
     from: mockServerFrom,
   })),
